@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quantum & Dynamics Robotics | Farm GPS Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #f4f6f8; }
+    header { background: #0d47a1; color: white; padding: 20px; text-align: center; }
+    h1 { margin: 0; font-size: 24px; }
+    .motto { font-style: italic; font-size: 14px; margin-top: 5px; color: #cfd8dc; }
+    #controls { padding: 20px; text-align: center; background: #fff; }
+    button { padding: 10px 15px; margin: 5px; font-size: 16px; border: none; background: #2196f3; color: white; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #1976d2; }
+    #status { margin: 10px 0; font-weight: bold; }
+    #map { height: 400px; margin: 20px; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px auto; background: white; }
+    th, td { border: 1px solid #ccc; padding: 8px; font-size: 14px; text-align: center; }
+    footer { text-align: center; padding: 15px; background: #0d47a1; color: white; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Quantum & Dynamics Robotics</h1>
+  <div class="motto">Connecting Today's Technology with Tomorrow's Agriculture 🌾🚁</div>
+</header>
+
+<div id="controls">
+  <button onclick="startTracking()">Start Tracking</button>
+  <button onclick="stopTracking()">Stop Tracking</button>
+  <button onclick="downloadCSV()">Download CSV</button>
+  <div id="status">📍 GPS Status: Not Tracking</div>
+    <div id="gps-indicator" style="margin-top:5px; color: gray; animation: blink 1s linear infinite;">🔄 Waiting for GPS...</div>
+<style>
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+</style>
+    <div id="point-count" style="margin-top:5px;">Captured Points: 0</div>
+  <div><strong>Total Area:</strong> <span id="area">0</span> m²</div>
+</div>
+
+<div id="map" style="position: relative;"><div id="map-loader" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 8px;">🗺️ Loading map...</div></div>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Latitude</th><th>Longitude</th><th>Time</th></tr>
+  </thead>
+  <tbody id="coordsBody"></tbody>
+</table>
+
+<footer>
+  © 2025 Quantum & Dynamics Robotics. All rights reserved.
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  let map = L.map('map').setView([20.59, 78.96], 5);
+    map.on('load', () => document.getElementById('map-loader').style.display = 'none');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+  }).addTo(map);
+
+  let watchId = null;
+  let coords = [];
+  let markers = [];
+  let polygon = null;
+
+  function startTracking() {
+    coords = [];
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    if (polygon) {
+      map.removeLayer(polygon);
+      polygon = null;
+    }
+
+    document.getElementById("coordsBody").innerHTML = "";
+    document.getElementById("status").textContent = "📍 GPS Status: Tracking...";
+    
+
+    if (!navigator.geolocation) {
+      document.getElementById("gps-indicator").textContent = "❌ GPS Not Supported";
+      document.getElementById("gps-indicator").style.color = "red";
+      return;
+    }
+
+    let gpsReceived = false;
+    watchId = navigator.geolocation.watchPosition(pos => {
+      if (!gpsReceived) {
+        gpsReceived = true;
+        document.getElementById("gps-indicator").textContent = "🟢 GPS Connected";
+        document.getElementById("gps-indicator").style.color = "green";
+        document.getElementById("gps-indicator").style.animation = "none";
+      }
+      const { latitude, longitude } = pos.coords;
+      const time = new Date().toLocaleTimeString();
+      coords.push([latitude, longitude]);
+
+      let marker = L.circleMarker([latitude, longitude], { radius: 5, color: 'green' }).addTo(map);
+      markers.push(marker);
+      map.setView([latitude, longitude], 18);
+
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${coords.length}</td><td>${latitude}</td><td>${longitude}</td><td>${time}</td>`;
+      document.getElementById("coordsBody").appendChild(row);
+      document.getElementById("point-count").textContent = "Captured Points: " + coords.length;
+
+      if (coords.length >= 3) {
+        if (polygon) map.removeLayer(polygon);
+        polygon = L.polygon(coords, { color: 'blue', fillOpacity: 0.2 }).addTo(map);
+        document.getElementById("area").textContent = calculateArea(coords).toFixed(2);
+      }
+    }, err => {
+      document.getElementById("gps-indicator").textContent = "❌ GPS Error: " + err.message;
+      document.getElementById("gps-indicator").style.color = "red";
+    }, {
+      enableHighAccuracy: true, timeout: 20000, maximumAge: 0
+    });
+  }
+
+  function stopTracking() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      document.getElementById("status").textContent = "📍 GPS Status: Tracking Stopped";
+    document.getElementById("gps-indicator").textContent = gpsReceived ? "⚠️ GPS Stopped" : "❌ GPS Not Received";
+    document.getElementById("gps-indicator").style.color = "orange";
+    }
+  }
+
+  function downloadCSV() {
+    if (coords.length === 0) return alert("No data recorded");
+    let csv = "Latitude,Longitude
+" + coords.map(c => c.join(",")).join("\n");
+    let blob = new Blob([csv], { type: "text/csv" });
+    let url = URL.createObjectURL(blob);
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "farm_coordinates.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function calculateArea(points) {
+    let area = 0;
+    if (points.length < 3) return 0;
+    const R = 6378137;
+    const toRad = x => x * Math.PI / 180;
+    for (let i = 0; i < points.length; i++) {
+      let [lat1, lon1] = points[i];
+      let [lat2, lon2] = points[(i + 1) % points.length];
+      area += toRad(lon2 - lon1) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+    }
+    return Math.abs(area * R * R / 2.0);
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(() => {
+      console.log("Service Worker Registered");
+    });
+  }
+</script>
+
+</body>
+</html>
+
+setTimeout(() => {
+  if (!gpsReceived && watchId !== null) {
+    document.getElementById("gps-indicator").textContent = "❌ No GPS signal received";
+    document.getElementById("gps-indicator").style.color = "red";
+    document.getElementById("gps-indicator").style.animation = "none";
+  }
+}, 10000);
